@@ -1,0 +1,109 @@
+name: GitHub APKM Mod-Cheat Automation Factory
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  mod_process:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Get project files
+      uses: actions/checkout@v4
+
+    - name: Setup Java and Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Mod Tools and Android SDK
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openjdk-17-jdk apktool unzip zip android-sdk-build-tools
+        pip install cryptography
+        # apksigner мен zipalign жолдарын жүйеге тіркеу
+        echo "PATH=$PATH:/usr/lib/android-sdk/build-tools/30.0.3" >> $GITHUB_ENV
+
+    - name: Merge target parts
+      run: |
+        echo "[*] Файл бөліктері жиналуда..."
+        cat target_part_* > target.apkm
+        echo "[+] Біртұтас target.apkm файлы құрастырылды."
+
+    - name: Extract APKM to get Base APK
+      run: |
+        echo "[*] APKM архиві ашылуда..."
+        mkdir apkm_extracted
+        unzip target.apkm -d apkm_extracted
+        if [ -f apkm_extracted/base.apk ]; then
+          mv apkm_extracted/base.apk ./target.apk
+          echo "[+] Негізгі файл (target.apk) бөліп алынды!"
+        else
+          echo "[-] Қате: base.apk табылмады. Бірінші кездескен APK-ны аламыз."
+          mv apkm_extracted/*.apk ./target.apk
+        fi
+
+    - name: Decompile Main APK (Skip Resources)
+      run: |
+        echo "[*] Басты APK-ның тек кодын бөлшектеу..."
+        apktool d -r target.apk -o apk_extracted
+
+    - name: Run Auto Patcher Script
+      run: |
+        echo "[*] Автоматты өңдеу скрипті (patcher.py) іске қосылуда..."
+        python patcher.py
+
+    - name: Rebuild Main APK
+      run: |
+        echo "[*] Өңделген негізгі APK-ны қайта жинау..."
+        apktool b apk_extracted -o patched_base.apk
+
+    - name: Align and Sign All APKs with v2/v3 Scheme
+      run: |
+        echo "[*] Қолтаңба кілтін жасау..."
+        keytool -genkey -v -keystore test.keystore -alias test_alias -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Modder"
+        
+        echo "[*] Файлдарды байт бойынша теңестіру (Zipalign) және apksigner-мен қол қою..."
+        
+        # 1. Базалық APK-ны теңестіру және қол қою
+        zipalign -v 4 patched_base.apk base_aligned.apk
+        apksigner sign --ks test.keystore --ks-pass pass:123456 --ks-key-alias test_alias --key-pass pass:123456 --out apkm_extracted/base.apk base_aligned.apk
+
+        # 2. Қалған барлық split APK-ларға жаппай қайта қол қою
+        for apk in apkm_extracted/*.apk; do
+          if [ "$apk" != "apkm_extracted/base.apk" ]; then
+            echo "[+] Жаңа қолтаңба басылуда (v2/v3): $apk"
+            # Ескі қолтаңба іздерін тазалау
+            zip -d "$apk" "META-INF/*" || true
+            
+            # Теңестіру және apksigner арқылы v2 қолтаңба салу
+            zipalign -v 4 "$apk" "${apk%.apk}_aligned.apk"
+            mv "${apk%.apk}_aligned.apk" "$apk"
+            apksigner sign --ks test.keystore --ks-pass pass:123456 --ks-key-alias test_alias --key-pass pass:123456 "$apk"
+          fi
+        done
+
+    - name: Repack back to APKM
+      run: |
+        echo "[*] Жаңа үйлесімді пакетті құрастыру..."
+        cd apkm_extracted
+        zip -r ../modded_target.apkm .
+        cd ..
+        echo "[+] Жаңа modded_target.apkm дайын."
+
+    - name: Encrypt Final Output
+      run: |
+        echo "[*] Дайын өнімді қорғаныс қабатымен қаптау..."
+        python installer.py -e modded_target.apkm || echo "[!] installer.py табылмаса да, жұмысты тоқтатпау"
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Ready_Cheat_Mod_Package
+        path: |
+          ./*.enc
+          ./modded_target.apkm
+          ./secret.key
+
