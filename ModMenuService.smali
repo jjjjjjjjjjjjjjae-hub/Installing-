@@ -2,8 +2,23 @@
 .super Landroid/app/Service;
 
 .method public onCreate()V
-    .registers 2
+    .registers 4
     invoke-super {p0}, Landroid/app/Service;->onCreate()V
+    
+    # Рұқсатты тексеру: бар болса аттап өту
+    invoke-static {p0}, Landroid/provider/Settings;->canDrawOverlays(Landroid/content/Context;)Z
+    move-result v0
+    if-eqz v0, :cond_permission_ok
+
+    # Рұқсат жоқ болса ғана сұрау
+    new-instance v0, Landroid/content/Intent;
+    const-string v1, "android.settings.action.MANAGE_OVERLAY_PERMISSION"
+    invoke-direct {v0, v1}, Landroid/content/Intent;-><init>(Ljava/lang/String;)V
+    const/high16 v1, 0x10000000
+    invoke-virtual {v0, v1}, Landroid/content/Intent;->addFlags(I)Landroid/content/Intent;
+    invoke-virtual {p0, v0}, Lcom/almas/official/ModMenuService;->startActivity(Landroid/content/Intent;)V
+
+    :cond_permission_ok
     return-void
 .end method
 
