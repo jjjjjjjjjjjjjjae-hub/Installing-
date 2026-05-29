@@ -2,23 +2,17 @@
 .super Landroid/app/Service;
 
 .method public onCreate()V
-    .registers 4
+    .registers 2
     invoke-super {p0}, Landroid/app/Service;->onCreate()V
-    
-    # Рұқсатты тексеру (SYSTEM_ALERT_WINDOW)
-    invoke-static {}, Landroid/os/Build$VERSION;->SDK_INT:I
-    const/16 v0, 0x17
-    if-lt v1, v0, :cond_permission_ok
-    
-    # Егер рұқсат жоқ болса, баптауларға жіберу
-    new-instance v0, Landroid/content/Intent;
-    const-string v1, "android.settings.action.MANAGE_OVERLAY_PERMISSION"
-    invoke-direct {v0, v1}, Landroid/content/Intent;-><init>(Ljava/lang/String;)V
-    const/high16 v1, 0x10000000
-    invoke-virtual {v0, v1}, Landroid/content/Intent;->addFlags(I)Landroid/content/Intent;
-    invoke-virtual {p0, v0}, Lcom/almas/official/ModMenuService;->startActivity(Landroid/content/Intent;)V
+    return-void
+.end method
 
-    :cond_permission_ok
+.method public static start(Landroid/content/Context;)V
+    .registers 3
+    new-instance v0, Landroid/content/Intent;
+    const-class v1, Lcom/almas/official/ModMenuService;
+    invoke-direct {v0, p0, v1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
+    invoke-virtual {p0, v0}, Landroid/content/Context;->startService(Landroid/content/Intent;)Landroid/content/ComponentName;
     return-void
 .end method
 
